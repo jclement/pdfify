@@ -1,6 +1,6 @@
 # Multi-stage Dockerfile for building pdfify from source.
 # The final image includes both the Go binary and all conversion tools.
-FROM golang:1.24-alpine AS build
+FROM golang:1.26-alpine AS build
 WORKDIR /src
 COPY go.* ./
 RUN go mod download

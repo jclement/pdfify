@@ -9,7 +9,7 @@ run = "go build -ldflags=\"-X main.version=dev\" -o ./bin/pdfify ./cmd/pdfify &&
 
 [tasks.test]
 description = "Run all tests"
-run = "go test -v -race -cover ./..."
+run = "go test -v -race ./..."
 
 [tasks."test:unit"]
 description = "Unit tests only"
