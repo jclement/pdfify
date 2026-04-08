@@ -128,9 +128,9 @@ while IFS= read -r line || [[ -n "$line" ]]; do
     if [[ $IN_CODE -eq 0 && $IN_FM -eq 0 ]]; then
         if [[ $DONE_TOC_BREAK -eq 0 && "$TOC_LEVEL" -gt 0 && -n "$line" ]]; then
             echo "" >> "$BREAK_MD"
-            printf '%%s\n' '` + "```{=latex}" + `' >> "$BREAK_MD"
+            printf '%%s\n' '`+"```{=latex}"+`' >> "$BREAK_MD"
             echo '\newpage' >> "$BREAK_MD"
-            printf '%%s\n' '` + "```" + `' >> "$BREAK_MD"
+            printf '%%s\n' '`+"```"+`' >> "$BREAK_MD"
             echo "" >> "$BREAK_MD"
             DONE_TOC_BREAK=1
         fi
@@ -141,9 +141,9 @@ while IFS= read -r line || [[ -n "$line" ]]; do
                 H1_COUNT=$((H1_COUNT + 1))
                 if [[ $H1_COUNT -gt 1 && $FILE_PAGEBREAK -eq 1 ]]; then
                     echo "" >> "$BREAK_MD"
-                    printf '%%s\n' '` + "```{=latex}" + `' >> "$BREAK_MD"
+                    printf '%%s\n' '`+"```{=latex}"+`' >> "$BREAK_MD"
                     echo '\newpage' >> "$BREAK_MD"
-                    printf '%%s\n' '` + "```" + `' >> "$BREAK_MD"
+                    printf '%%s\n' '`+"```"+`' >> "$BREAK_MD"
                     echo "" >> "$BREAK_MD"
                 fi
             fi

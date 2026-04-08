@@ -12,30 +12,30 @@ type Theme struct {
 	Description string
 
 	// Colors (HTML hex without #)
-	Accent          string
-	AccentDark      string
-	CodeBg          string
-	CodeBorder      string
-	HeadRuleColor   string
-	TitleBg         string
-	TableRowGray    string
+	Accent        string
+	AccentDark    string
+	CodeBg        string
+	CodeBorder    string
+	HeadRuleColor string
+	TitleBg       string
+	TableRowGray  string
 
 	// Callout colors: bg, bar, fg for each type
 	InfoBg, InfoBar, InfoFg          string
-	TipBg, TipBar, TipFg            string
+	TipBg, TipBar, TipFg             string
 	WarningBg, WarningBar, WarningFg string
-	DangerBg, DangerBar, DangerFg   string
+	DangerBg, DangerBar, DangerFg    string
 	ExampleBg, ExampleBar, ExampleFg string
-	QuoteBg, QuoteBar, QuoteFg      string
+	QuoteBg, QuoteBar, QuoteFg       string
 
 	// Fonts
-	MainFont     string
-	MonoFont     string
-	HeadingFont  string
+	MainFont    string
+	MonoFont    string
+	HeadingFont string
 
 	// Heading style
-	H1LetterSpace  int
-	H1SmallCaps    bool
+	H1LetterSpace int
+	H1SmallCaps   bool
 
 	// Link color (same as accent by default)
 	LinkColor string

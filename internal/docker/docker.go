@@ -27,9 +27,9 @@ var dockerfile string
 type Status int
 
 const (
-	StatusReady      Status = iota // Image exists and is current
-	StatusMissing                  // Image doesn't exist
-	StatusOutdated                 // Image exists but was built by a different pdfify version
+	StatusReady    Status = iota // Image exists and is current
+	StatusMissing                // Image doesn't exist
+	StatusOutdated               // Image exists but was built by a different pdfify version
 )
 
 // Inspect checks the state of the pdfify Docker image.

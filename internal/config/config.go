@@ -27,10 +27,10 @@ type Config struct {
 	Watermark string `yaml:"watermark" json:"watermark"`
 
 	// TOC and numbering
-	TocLevel       int    `yaml:"toc_level" json:"toc_level"`
-	NumberSections *bool  `yaml:"number_sections" json:"number_sections"`
-	NumberFrom     int    `yaml:"number_from" json:"number_from"`
-	PageBreak      *bool  `yaml:"page_break" json:"page_break"`
+	TocLevel       int   `yaml:"toc_level" json:"toc_level"`
+	NumberSections *bool `yaml:"number_sections" json:"number_sections"`
+	NumberFrom     int   `yaml:"number_from" json:"number_from"`
+	PageBreak      *bool `yaml:"page_break" json:"page_break"`
 
 	// Paper and output
 	PaperSize string `yaml:"paper_size" json:"paper_size"`
