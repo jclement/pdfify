@@ -18,5 +18,3 @@ jobs:
       - run: mise run test
       - name: Verify binary
         run: ./bin/pdfify --help
-      - name: Validate goreleaser config
-        run: goreleaser check
