@@ -1,0 +1,110 @@
+version: 2
+project_name: pdfify
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - main: ./cmd/pdfify
+    binary: pdfify
+    env: [CGO_ENABLED=0]
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.ShortCommit}} -X main.date={{.Date}}
+
+archives:
+  - format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        format: zip
+
+signs:
+  - cmd: cosign
+    artifacts: checksum
+    args:
+      - "sign-blob"
+      - "--yes"
+      - "--bundle=${signature}.sigstore.json"
+      - "--output-signature=${signature}"
+      - "${artifact}"
+
+docker_signs:
+  - cmd: cosign
+    args:
+      - "sign"
+      - "--yes"
+      - "${artifact}"
+
+dockers:
+  - goos: linux
+    goarch: amd64
+    dockerfile: Dockerfile.goreleaser
+    use: buildx
+    build_flag_templates: ["--platform=linux/amd64"]
+    image_templates:
+      - "ghcr.io/jclement/{{ .ProjectName }}:{{ .Version }}-amd64"
+      - "ghcr.io/jclement/{{ .ProjectName }}:latest-amd64"
+  - goos: linux
+    goarch: arm64
+    dockerfile: Dockerfile.goreleaser
+    use: buildx
+    build_flag_templates: ["--platform=linux/arm64"]
+    image_templates:
+      - "ghcr.io/jclement/{{ .ProjectName }}:{{ .Version }}-arm64"
+      - "ghcr.io/jclement/{{ .ProjectName }}:latest-arm64"
+
+docker_manifests:
+  - name_template: "ghcr.io/jclement/{{ .ProjectName }}:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/jclement/{{ .ProjectName }}:{{ .Version }}-amd64"
+      - "ghcr.io/jclement/{{ .ProjectName }}:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/jclement/{{ .ProjectName }}:latest"
+    image_templates:
+      - "ghcr.io/jclement/{{ .ProjectName }}:latest-amd64"
+      - "ghcr.io/jclement/{{ .ProjectName }}:latest-arm64"
+
+brews:
+  - repository:
+      owner: jclement
+      name: homebrew-tap
+      token: "{{ .Env.GITHUB_TOKEN }}"
+    homepage: "https://github.com/jclement/pdfify"
+    description: "Convert Markdown to beautiful PDFs via Docker"
+    license: "MIT"
+    install: |
+      bin.install "pdfify"
+    test: |
+      system bin/"pdfify", "--version"
+    dependencies:
+      - name: docker
+        type: optional
+
+changelog:
+  sort: asc
+  filters:
+    exclude: ["^docs:", "^test:", "^ci:", "^chore:"]
+
+release:
+  prerelease: auto
+  footer: |
+    ## Docker
+
+    The pdfify Docker image includes the Go binary AND the conversion container tools
+    (pandoc, XeLaTeX, mermaid-cli). Use it directly without needing Docker-in-Docker:
+
+    ```bash
+    docker pull ghcr.io/jclement/{{ .ProjectName }}:{{ .Version }}
+    docker run --rm -v $(pwd):/workspace ghcr.io/jclement/{{ .ProjectName }}:{{ .Version }} /workspace/document.md
+    ```
+
+    ## Install
+
+    ```bash
+    # macOS/Linux
+    brew install jclement/tap/pdfify
+
+    # Or download from the assets below
+    ```

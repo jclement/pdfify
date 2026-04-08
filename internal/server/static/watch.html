@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>pdfify — {{.Filename}}</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { height: 100%; background: #1e1e2e; font-family: system-ui, -apple-system, sans-serif; }
+        .toolbar {
+            height: 40px; background: #313244; display: flex; align-items: center;
+            padding: 0 16px; color: #cdd6f4; font-size: 13px; gap: 12px;
+            border-bottom: 1px solid #45475a;
+        }
+        .toolbar .filename { font-weight: 600; color: #89b4fa; }
+        .toolbar .status { margin-left: auto; font-size: 12px; color: #6c7086; }
+        .toolbar .status.connected { color: #a6e3a1; }
+        .toolbar .status.connecting { color: #f9e2af; }
+        iframe {
+            width: 100%; height: calc(100vh - 40px); border: none; background: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="toolbar">
+        <span class="filename">{{.Filename}}</span>
+        <span>— pdfify watch mode</span>
+        <span class="status connecting" id="status">connecting...</span>
+    </div>
+    <iframe id="viewer" src="/pdf"></iframe>
+
+    <script>
+        const viewer = document.getElementById('viewer');
+        const status = document.getElementById('status');
+        let currentHash = '';
+
+        function connect() {
+            const es = new EventSource('/events');
+            es.onopen = () => {
+                status.textContent = 'watching';
+                status.className = 'status connected';
+            };
+            es.onmessage = (e) => {
+                if (e.data === 'reload') {
+                    // Reload the PDF iframe
+                    viewer.src = '/pdf?t=' + Date.now();
+                    status.textContent = 'updated ' + new Date().toLocaleTimeString();
+                }
+            };
+            es.onerror = () => {
+                status.textContent = 'reconnecting...';
+                status.className = 'status connecting';
+                es.close();
+                setTimeout(connect, 2000);
+            };
+        }
+        connect();
+    </script>
+</body>
+</html>

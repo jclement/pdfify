@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(CGO_ENABLED=0 go build:*)",
+      "Bash(./bin/pdfify:*)",
+      "Bash(/tmp/gen-script.go << 'GOEOF'\npackage main\n\nimport \\(\n\t\"fmt\"\n\t\"github.com/jclement/pdfify/internal/config\"\n\t\"github.com/jclement/pdfify/internal/converter\"\n\t\"github.com/jclement/pdfify/internal/theme\"\n\\)\n\nfunc main\\(\\) {\n\tcfg := config.DefaultConfig\\(\\)\n\tcfg.TocLevel = 3\n\tcfg.Title = \"Full Features Demo\"\n\tcfg.Subtitle = \"Showcasing all pdfify capabilities\"\n\tcfg.Author = \"pdfify\"\n\tcfg.Date = \"2025\"\n\tt := theme.Get\\(\"default\"\\)\n\tfmt.Print\\(converter.GenerateScript\\(cfg, t\\)\\)\n}\nGOEOF)",
+      "Bash(go run:*)",
+      "Bash(chmod:*)",
+      "Bash(/tmp/gen-script.go << 'GOEOF'\npackage main\n\nimport \\(\n\t\"fmt\"\n\t\"os\"\n\n\t\"github.com/jclement/pdfify/internal/config\"\n\t\"github.com/jclement/pdfify/internal/converter\"\n\t\"github.com/jclement/pdfify/internal/theme\"\n\\)\n\nfunc main\\(\\) {\n\tcfg := config.DefaultConfig\\(\\)\n\tcfg.TocLevel = 3\n\tcfg.Title = \"Full Features Demo\"\n\tcfg.Subtitle = \"Showcasing all pdfify capabilities\"\n\tcfg.Author = \"pdfify\"\n\tcfg.Date = \"2025\"\n\tt := theme.Get\\(\"default\"\\)\n\tscript := converter.GenerateScript\\(cfg, t\\)\n\tos.WriteFile\\(\"/tmp/pdfify-debug-script.sh\", []byte\\(script\\), 0755\\)\n\tfmt.Println\\(\"Done\"\\)\n}\nGOEOF)",
+      "Bash(/Users/jsc/Developer/pdfify/cmd/debug/main.go << 'GOEOF'\npackage main\n\nimport \\(\n\t\"fmt\"\n\t\"os\"\n\n\t\"github.com/jclement/pdfify/internal/config\"\n\t\"github.com/jclement/pdfify/internal/converter\"\n\t\"github.com/jclement/pdfify/internal/theme\"\n\\)\n\nfunc main\\(\\) {\n\tcfg := config.DefaultConfig\\(\\)\n\tcfg.TocLevel = 3\n\tcfg.Title = \"Full Features Demo\"\n\tcfg.Subtitle = \"Showcasing all pdfify capabilities\"\n\tcfg.Author = \"pdfify\"\n\tcfg.Date = \"2025\"\n\tt := theme.Get\\(\"default\"\\)\n\tscript := converter.GenerateScript\\(cfg, t\\)\n\tos.WriteFile\\(\"/tmp/pdfify-debug-script.sh\", []byte\\(script\\), 0755\\)\n\tfmt.Println\\(\"Done\"\\)\n}\nGOEOF)",
+      "Bash(docker run:*)"
+    ]
+  }
+}

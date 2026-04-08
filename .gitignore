@@ -1,0 +1,22 @@
+# Build output
+bin/
+tmp/
+dist/
+
+# Local config
+mise.local.toml
+fnox.local.toml
+
+# Data
+data/
+*.db
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# Core dumps
+core

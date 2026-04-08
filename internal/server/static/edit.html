@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>pdfify editor — {{.Filename}}</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { height: 100%; background: #1e1e2e; font-family: system-ui, -apple-system, sans-serif; overflow: hidden; }
+
+        .toolbar {
+            height: 40px; background: #313244; display: flex; align-items: center;
+            padding: 0 16px; color: #cdd6f4; font-size: 13px; gap: 12px;
+            border-bottom: 1px solid #45475a;
+        }
+        .toolbar .filename { font-weight: 600; color: #89b4fa; }
+        .toolbar .btn {
+            padding: 4px 12px; border-radius: 4px; border: 1px solid #45475a;
+            background: #45475a; color: #cdd6f4; font-size: 12px; cursor: pointer;
+        }
+        .toolbar .btn:hover { background: #585b70; }
+        .toolbar .btn.active { background: #89b4fa; color: #1e1e2e; border-color: #89b4fa; }
+        .toolbar .status { margin-left: auto; font-size: 12px; color: #6c7086; }
+        .toolbar .status.saved { color: #a6e3a1; }
+        .toolbar .status.saving { color: #f9e2af; }
+        .toolbar .status.error { color: #f38ba8; }
+
+        .container { display: flex; height: calc(100vh - 40px); }
+        .editor-pane { flex: 1; min-width: 0; overflow: hidden; }
+        .preview-pane { flex: 1; min-width: 0; background: white; }
+        .divider {
+            width: 4px; background: #45475a; cursor: col-resize;
+            transition: background 0.2s;
+        }
+        .divider:hover { background: #89b4fa; }
+
+        .CodeMirror { height: 100% !important; font-size: 14px; }
+        iframe { width: 100%; height: 100%; border: none; }
+    </style>
+</head>
+<body>
+    <div class="toolbar">
+        <span class="filename">{{.Filename}}</span>
+        <span>— pdfify editor</span>
+        <div style="display: flex; gap: 4px;">
+            <button class="btn active" id="btn-pdf" onclick="setPreview('pdf')">PDF</button>
+            <button class="btn" id="btn-html" onclick="setPreview('html')">HTML</button>
+        </div>
+        <span class="status" id="status">loading...</span>
+    </div>
+    <div class="container">
+        <div class="editor-pane" id="editor-pane">
+            <textarea id="editor"></textarea>
+        </div>
+        <div class="divider" id="divider"></div>
+        <div class="preview-pane">
+            <iframe id="preview" src="/pdf"></iframe>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/markdown/markdown.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/yaml/yaml.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/yaml-frontmatter/yaml-frontmatter.min.js"></script>
+    <script>
+        const statusEl = document.getElementById('status');
+        const preview = document.getElementById('preview');
+        let previewMode = 'pdf';
+        let saveTimer = null;
+        let cm;
+
+        // Initialize CodeMirror
+        cm = CodeMirror.fromTextArea(document.getElementById('editor'), {
+            mode: 'yaml-frontmatter',
+            theme: 'dracula',
+            lineNumbers: true,
+            lineWrapping: true,
+            autofocus: true,
+            tabSize: 2,
+            indentWithTabs: false,
+        });
+
+        // Load initial content
+        fetch('/api/content')
+            .then(r => r.text())
+            .then(text => {
+                cm.setValue(text);
+                statusEl.textContent = 'ready';
+                statusEl.className = 'status saved';
+            });
+
+        // Auto-save on change with debounce
+        cm.on('change', () => {
+            statusEl.textContent = 'modified';
+            statusEl.className = 'status saving';
+            clearTimeout(saveTimer);
+            saveTimer = setTimeout(save, 1500);
+        });
+
+        // Ctrl+S to save immediately
+        cm.setOption('extraKeys', {
+            'Ctrl-S': () => { clearTimeout(saveTimer); save(); },
+            'Cmd-S': () => { clearTimeout(saveTimer); save(); },
+        });
+
+        function save() {
+            statusEl.textContent = 'saving...';
+            statusEl.className = 'status saving';
+            fetch('/api/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content: cm.getValue() }),
+            })
+            .then(r => {
+                if (r.ok) {
+                    statusEl.textContent = 'saved ' + new Date().toLocaleTimeString();
+                    statusEl.className = 'status saved';
+                } else {
+                    statusEl.textContent = 'save failed';
+                    statusEl.className = 'status error';
+                }
+            })
+            .catch(() => {
+                statusEl.textContent = 'save error';
+                statusEl.className = 'status error';
+            });
+        }
+
+        // SSE for reload
+        function connect() {
+            const es = new EventSource('/events');
+            es.onmessage = (e) => {
+                if (e.data === 'reload') {
+                    preview.src = '/pdf?t=' + Date.now();
+                }
+            };
+            es.onerror = () => { es.close(); setTimeout(connect, 2000); };
+        }
+        connect();
+
+        // Preview mode toggle
+        function setPreview(mode) {
+            previewMode = mode;
+            document.getElementById('btn-pdf').className = mode === 'pdf' ? 'btn active' : 'btn';
+            document.getElementById('btn-html').className = mode === 'html' ? 'btn active' : 'btn';
+            if (mode === 'pdf') {
+                preview.src = '/pdf?t=' + Date.now();
+            } else {
+                // For HTML mode, render markdown as styled HTML
+                preview.srcdoc = renderHTML(cm.getValue());
+            }
+        }
+
+        // Simple markdown-to-HTML renderer (for live preview, not full pdfify rendering)
+        function renderHTML(md) {
+            // Strip frontmatter
+            let body = md;
+            if (body.startsWith('---\n')) {
+                const end = body.indexOf('\n---\n', 4);
+                if (end > 0) body = body.substring(end + 5);
+            }
+
+            // Basic markdown transformations
+            let html = body
+                .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+                .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+                .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.+?)\*/g, '<em>$1</em>')
+                .replace(/`([^`]+)`/g, '<code>$1</code>')
+                .replace(/^\- (.+)$/gm, '<li>$1</li>')
+                .replace(/^\> \[!(\w+)\] ?(.*)$/gm, '<div class="callout callout-$1"><strong>$2</strong></div>')
+                .replace(/^\> (.+)$/gm, '<blockquote>$1</blockquote>')
+                .replace(/\n\n/g, '</p><p>')
+                ;
+
+            return `<!DOCTYPE html><html><head><style>
+                body { font-family: 'Segoe UI', system-ui, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; color: #1e293b; line-height: 1.6; }
+                h1 { font-size: 2em; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-top: 1.5em; }
+                h2 { font-size: 1.5em; margin-top: 1.3em; }
+                h3 { font-size: 1.2em; margin-top: 1em; }
+                code { background: #f1f5f9; padding: 2px 6px; border-radius: 3px; font-size: 0.9em; }
+                blockquote { border-left: 3px solid #3b82f6; padding: 12px; margin: 12px 0; background: #eff6ff; }
+                .callout { padding: 12px; margin: 12px 0; border-left: 3px solid; border-radius: 0 4px 4px 0; }
+                .callout-info, .callout-note { background: #eff6ff; border-color: #3b82f6; }
+                .callout-warning, .callout-caution { background: #fffbeb; border-color: #f59e0b; }
+                .callout-tip, .callout-hint { background: #f0fdf4; border-color: #22c55e; }
+                .callout-danger, .callout-error { background: #fef2f2; border-color: #ef4444; }
+                li { margin-left: 20px; }
+            </style></head><body><p>${html}</p></body></html>`;
+        }
+
+        // Resizable divider
+        const divider = document.getElementById('divider');
+        const editorPane = document.getElementById('editor-pane');
+        let isDragging = false;
+        divider.addEventListener('mousedown', () => { isDragging = true; });
+        document.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            const pct = (e.clientX / window.innerWidth) * 100;
+            editorPane.style.flex = 'none';
+            editorPane.style.width = pct + '%';
+        });
+        document.addEventListener('mouseup', () => { isDragging = false; });
+    </script>
+</body>
+</html>
