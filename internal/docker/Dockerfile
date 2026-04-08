@@ -1,4 +1,4 @@
-FROM node:20-slim
+FROM node:25-slim
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update -qq && \
     apt-get install -y --no-install-recommends \
