@@ -478,7 +478,7 @@ func ensureDockerImage(w *ui.Writer, forceRebuild bool) error {
 
 	status, detail, err := docker.Inspect(version)
 	if err != nil {
-		return fmt.Errorf("Docker is required but not available: %w", err)
+		return fmt.Errorf("docker is required but not available: %w", err)
 	}
 
 	switch status {
@@ -503,7 +503,7 @@ func ensureDockerImage(w *ui.Writer, forceRebuild bool) error {
 				w.Detail(line)
 			}
 		}); err != nil {
-			return fmt.Errorf("Docker build failed: %w", err)
+			return fmt.Errorf("docker build failed: %w", err)
 		}
 		w.Success("Docker image built")
 		return nil

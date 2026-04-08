@@ -39,7 +39,7 @@ func GenerateScript(cfg *config.Config, t *theme.Theme) string {
 	b.WriteString("echo '{\"args\": [\"--no-sandbox\", \"--disable-setuid-sandbox\", \"--disable-dev-shm-usage\", \"--disable-gpu\"]}' > /tmp/puppeteer-config.json\n\n")
 
 	// Strip first H1 if needed
-	b.WriteString(fmt.Sprintf("HIDE_FIRST_H1=\"${HIDE_FIRST_H1:-0}\"\n"))
+	b.WriteString("HIDE_FIRST_H1=\"${HIDE_FIRST_H1:-0}\"\n")
 	b.WriteString(`EFFECTIVE_INPUT="$INPUT_FILE"
 if [[ "$HIDE_FIRST_H1" == "1" ]]; then
     STRIPPED=$(mktemp /tmp/pdfify-stripped-XXXXXX.md)
