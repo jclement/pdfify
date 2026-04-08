@@ -15,8 +15,12 @@ builds:
       - -s -w -X main.version={{.Version}} -X main.commit={{.ShortCommit}} -X main.date={{.Date}}
 
 archives:
-  - format: tar.gz
-    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+  - name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE*
+      - README*
+      - CHANGELOG*
+    rlcp: true
     format_overrides:
       - goos: windows
         format: zip
@@ -38,7 +42,7 @@ docker_signs:
       - "--yes"
       - "${artifact}"
 
-dockers:
+dockers_v2:
   - goos: linux
     goarch: amd64
     dockerfile: Dockerfile.goreleaser
@@ -55,8 +59,6 @@ dockers:
     image_templates:
       - "ghcr.io/jclement/{{ .ProjectName }}:{{ .Version }}-arm64"
       - "ghcr.io/jclement/{{ .ProjectName }}:latest-arm64"
-
-docker_manifests:
   - name_template: "ghcr.io/jclement/{{ .ProjectName }}:{{ .Version }}"
     image_templates:
       - "ghcr.io/jclement/{{ .ProjectName }}:{{ .Version }}-amd64"
@@ -66,7 +68,7 @@ docker_manifests:
       - "ghcr.io/jclement/{{ .ProjectName }}:latest-amd64"
       - "ghcr.io/jclement/{{ .ProjectName }}:latest-arm64"
 
-brews:
+homebrew_casks:
   - repository:
       owner: jclement
       name: homebrew-tap
