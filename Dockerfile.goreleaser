@@ -1,6 +1,6 @@
 # Dockerfile.goreleaser is used by GoReleaser to build the Docker image.
 # The pdfify binary is already built — this just adds the conversion tools.
-FROM node:20-slim
+FROM node:25-slim
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update -qq && \
     apt-get install -y --no-install-recommends \
