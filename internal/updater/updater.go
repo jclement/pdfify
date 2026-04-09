@@ -4,11 +4,15 @@
 package updater
 
 import (
+	"archive/tar"
+	"archive/zip"
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -92,6 +96,7 @@ func Check(currentVersion string) *CheckResult {
 }
 
 // SelfUpdate downloads and replaces the current binary with the latest release.
+// The release asset is a tar.gz (or zip on Windows) archive containing the binary.
 func SelfUpdate(result *CheckResult) error {
 	if result == nil || !result.UpdateAvailable {
 		return fmt.Errorf("no update available")
@@ -105,7 +110,12 @@ func SelfUpdate(result *CheckResult) error {
 		return fmt.Errorf("no download available for %s/%s — visit %s to download manually", runtime.GOOS, runtime.GOARCH, result.ReleaseURL)
 	}
 
-	// Download new binary
+	execPath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("finding current binary: %w", err)
+	}
+
+	// Download the archive
 	resp, err := http.Get(result.DownloadURL)
 	if err != nil {
 		return fmt.Errorf("downloading update: %w", err)
@@ -119,19 +129,30 @@ func SelfUpdate(result *CheckResult) error {
 	// Cap download size at 256 MiB
 	limited := io.LimitReader(resp.Body, 256*1024*1024)
 
-	// Write to temp file in same directory as current binary (for atomic rename)
-	execPath, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("finding current binary: %w", err)
+	// Extract the binary from the archive
+	binaryName := "pdfify"
+	if runtime.GOOS == "windows" {
+		binaryName = "pdfify.exe"
 	}
 
-	tmpFile, err := os.CreateTemp(os.TempDir(), "pdfify-update-*")
+	var binaryData []byte
+	if runtime.GOOS == "windows" {
+		binaryData, err = extractFromZip(limited, binaryName)
+	} else {
+		binaryData, err = extractFromTarGz(limited, binaryName)
+	}
+	if err != nil {
+		return fmt.Errorf("extracting update: %w", err)
+	}
+
+	// Write extracted binary to temp file for atomic rename
+	tmpFile, err := os.CreateTemp(filepath.Dir(execPath), "pdfify-update-*")
 	if err != nil {
 		return fmt.Errorf("creating temp file: %w", err)
 	}
 	defer os.Remove(tmpFile.Name())
 
-	if _, err := io.Copy(tmpFile, limited); err != nil {
+	if _, err := tmpFile.Write(binaryData); err != nil {
 		tmpFile.Close()
 		return fmt.Errorf("writing update: %w", err)
 	}
@@ -147,6 +168,71 @@ func SelfUpdate(result *CheckResult) error {
 	}
 
 	return nil
+}
+
+// extractFromTarGz extracts a named file from a tar.gz stream.
+func extractFromTarGz(r io.Reader, name string) ([]byte, error) {
+	gz, err := gzip.NewReader(r)
+	if err != nil {
+		return nil, fmt.Errorf("decompressing archive: %w", err)
+	}
+	defer gz.Close()
+
+	tr := tar.NewReader(gz)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("reading archive: %w", err)
+		}
+		if filepath.Base(hdr.Name) == name && hdr.Typeflag == tar.TypeReg {
+			data, err := io.ReadAll(io.LimitReader(tr, 256*1024*1024))
+			if err != nil {
+				return nil, fmt.Errorf("reading binary from archive: %w", err)
+			}
+			return data, nil
+		}
+	}
+	return nil, fmt.Errorf("%s not found in archive", name)
+}
+
+// extractFromZip extracts a named file from a zip archive.
+// Since zip requires random access, we buffer the stream to a temp file first.
+func extractFromZip(r io.Reader, name string) ([]byte, error) {
+	tmpFile, err := os.CreateTemp("", "pdfify-zip-*")
+	if err != nil {
+		return nil, fmt.Errorf("creating temp file: %w", err)
+	}
+	defer os.Remove(tmpFile.Name())
+	defer tmpFile.Close()
+
+	size, err := io.Copy(tmpFile, r)
+	if err != nil {
+		return nil, fmt.Errorf("buffering archive: %w", err)
+	}
+
+	zr, err := zip.NewReader(tmpFile, size)
+	if err != nil {
+		return nil, fmt.Errorf("opening zip: %w", err)
+	}
+
+	for _, f := range zr.File {
+		if filepath.Base(f.Name) == name && !f.FileInfo().IsDir() {
+			rc, err := f.Open()
+			if err != nil {
+				return nil, fmt.Errorf("opening %s in zip: %w", name, err)
+			}
+			defer rc.Close()
+			data, err := io.ReadAll(io.LimitReader(rc, 256*1024*1024))
+			if err != nil {
+				return nil, fmt.Errorf("reading binary from zip: %w", err)
+			}
+			return data, nil
+		}
+	}
+	return nil, fmt.Errorf("%s not found in archive", name)
 }
 
 // platformAssetName returns the expected archive name for the current platform.
