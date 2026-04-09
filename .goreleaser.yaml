@@ -24,23 +24,22 @@ archives:
       - goos: windows
         format: zip
 
-# Signing disabled temporarily - cosign signature file path mismatch
-# signs:
-#   - cmd: cosign
-#     artifacts: checksum
-#     args:
-#       - "sign-blob"
-#       - "--yes"
-#       - "--bundle=${signature}.sigstore.json"
-#       - "--output-signature=${signature}"
-#       - "${artifact}"
+signs:
+  - cmd: cosign
+    artifacts: checksum
+    signature: "${artifact}.sig"
+    args:
+      - "sign-blob"
+      - "--yes"
+      - "--output-signature=${signature}"
+      - "${artifact}"
 
-# docker_signs:
-#   - cmd: cosign
-#     args:
-#       - "sign"
-#       - "--yes"
-#       - "${artifact}"
+docker_signs:
+  - cmd: cosign
+    args:
+      - "sign"
+      - "--yes"
+      - "${artifact}"
 
 dockers:
   - goos: linux
