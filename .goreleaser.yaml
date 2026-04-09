@@ -73,7 +73,7 @@ brews:
   - repository:
       owner: jclement
       name: homebrew-tap
-      token: "{{ .Env.GITHUB_TOKEN }}"
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     homepage: "https://github.com/jclement/pdfify"
     description: "Convert Markdown to beautiful PDFs via Docker"
     license: "MIT"
