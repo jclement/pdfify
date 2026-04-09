@@ -4,8 +4,10 @@
 package server
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"embed"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -29,6 +31,7 @@ type Server struct {
 	inputPath  string
 	outputPath string
 	mode       string // "watch" or "edit"
+	token      string // session token for access control
 
 	mu          sync.RWMutex
 	pdfData     []byte
@@ -43,14 +46,40 @@ type Server struct {
 	onConvert func() error
 }
 
+// generateToken creates a cryptographically random session token.
+func generateToken() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		// Fallback to timestamp-based token if crypto/rand fails
+		return fmt.Sprintf("%x", sha256.Sum256([]byte(fmt.Sprintf("%d", time.Now().UnixNano()))))
+	}
+	return hex.EncodeToString(b)
+}
+
 // New creates a new server instance.
 func New(inputPath, outputPath, mode string, onConvert func() error) *Server {
 	return &Server{
 		inputPath:  inputPath,
 		outputPath: outputPath,
 		mode:       mode,
+		token:      generateToken(),
 		clients:    make(map[chan string]bool),
 		onConvert:  onConvert,
+	}
+}
+
+// requireToken wraps a handler to require a valid session token.
+func (s *Server) requireToken(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		token := r.URL.Query().Get("token")
+		if token == "" {
+			token = r.Header.Get("X-Session-Token")
+		}
+		if token != s.token {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next(w, r)
 	}
 }
 
@@ -64,13 +93,17 @@ func (s *Server) Start() (string, error) {
 	s.addr = ln.Addr().String()
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", s.handleIndex)
-	mux.HandleFunc("/pdf", s.handlePDF)
-	mux.HandleFunc("/events", s.handleSSE)
-	mux.HandleFunc("/api/content", s.handleContent)
-	mux.HandleFunc("/api/save", s.handleSave)
-	mux.HandleFunc("/api/status", s.handleStatus)
-	mux.HandleFunc("/static/", s.handleStatic)
+	mux.HandleFunc("/", s.requireToken(s.handleIndex))
+	mux.HandleFunc("/pdf", s.requireToken(s.handlePDF))
+	mux.HandleFunc("/events", s.requireToken(s.handleSSE))
+	mux.HandleFunc("/api/content", s.requireToken(s.handleContent))
+	mux.HandleFunc("/api/save", s.requireToken(s.handleSave))
+	mux.HandleFunc("/api/generate-pdf", s.requireToken(s.handleGeneratePDF))
+	mux.HandleFunc("/api/status", s.requireToken(s.handleStatus))
+	mux.HandleFunc("/static/", s.handleStatic)   // static assets don't need auth
+	mux.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
 
 	srv := &http.Server{Handler: mux}
 
@@ -80,20 +113,24 @@ func (s *Server) Start() (string, error) {
 		}
 	}()
 
-	// Load initial PDF
+	// Load initial PDF if it exists
 	s.reloadPDF()
 
-	return fmt.Sprintf("http://%s", s.addr), nil
+	return fmt.Sprintf("http://%s?token=%s", s.addr, s.token), nil
 }
 
 // NotifyReload tells all connected clients to reload the PDF.
 func (s *Server) NotifyReload() {
 	s.reloadPDF()
+	s.notifyClients("pdf-ready")
+}
+
+func (s *Server) notifyClients(msg string) {
 	s.clientsMu.Lock()
 	defer s.clientsMu.Unlock()
 	for ch := range s.clients {
 		select {
-		case ch <- "reload":
+		case ch <- msg:
 		default:
 		}
 	}
@@ -140,6 +177,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	tmpl.Execute(w, map[string]string{
 		"Filename": filepath.Base(s.inputPath),
 		"Mode":     s.mode,
+		"Token":    s.token,
 	})
 }
 
@@ -239,18 +277,34 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Trigger reconversion
-	if s.onConvert != nil {
-		go func() {
-			if err := s.onConvert(); err != nil {
-				slog.Error("reconversion failed", "err", err)
-			}
-			s.NotifyReload()
-		}()
-	}
-
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+// handleGeneratePDF triggers PDF regeneration on demand.
+func (s *Server) handleGeneratePDF(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if s.onConvert == nil {
+		http.Error(w, "no converter configured", http.StatusInternalServerError)
+		return
+	}
+
+	go func() {
+		if err := s.onConvert(); err != nil {
+			slog.Error("PDF generation failed", "err", err)
+			s.notifyClients("pdf-error")
+			return
+		}
+		s.reloadPDF()
+		s.notifyClients("pdf-ready")
+	}()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "generating"})
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {

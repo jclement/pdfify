@@ -27,23 +27,29 @@
         <span>— pdfify watch mode</span>
         <span class="status connecting" id="status">connecting...</span>
     </div>
-    <iframe id="viewer" src="/pdf"></iframe>
+    <script>
+        const sessionToken = '{{.Token}}';
+        function apiURL(path) { return path + (path.includes('?') ? '&' : '?') + 'token=' + sessionToken; }
+    </script>
+    <iframe id="viewer"></iframe>
 
     <script>
         const viewer = document.getElementById('viewer');
         const status = document.getElementById('status');
         let currentHash = '';
 
+        // Load initial PDF with token
+        viewer.src = apiURL('/pdf') + '#toolbar=0&navpanes=0';
+
         function connect() {
-            const es = new EventSource('/events');
+            const es = new EventSource(apiURL('/events'));
             es.onopen = () => {
                 status.textContent = 'watching';
                 status.className = 'status connected';
             };
             es.onmessage = (e) => {
-                if (e.data === 'reload') {
-                    // Reload the PDF iframe
-                    viewer.src = '/pdf?t=' + Date.now();
+                if (e.data === 'reload' || e.data === 'pdf-ready') {
+                    viewer.src = apiURL('/pdf') + '&t=' + Date.now() + '#toolbar=0&navpanes=0';
                     status.textContent = 'updated ' + new Date().toLocaleTimeString();
                 }
             };

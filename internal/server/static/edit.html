@@ -6,6 +6,7 @@
     <title>pdfify editor — {{.Filename}}</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { height: 100%; background: #1e1e2e; font-family: system-ui, -apple-system, sans-serif; overflow: hidden; }
@@ -16,38 +17,168 @@
             border-bottom: 1px solid #45475a;
         }
         .toolbar .filename { font-weight: 600; color: #89b4fa; }
+        .toolbar .spacer { flex: 1; }
+        .toolbar .btn-group { display: flex; gap: 2px; }
         .toolbar .btn {
             padding: 4px 12px; border-radius: 4px; border: 1px solid #45475a;
             background: #45475a; color: #cdd6f4; font-size: 12px; cursor: pointer;
+            transition: all 0.15s;
         }
         .toolbar .btn:hover { background: #585b70; }
         .toolbar .btn.active { background: #89b4fa; color: #1e1e2e; border-color: #89b4fa; }
-        .toolbar .status { margin-left: auto; font-size: 12px; color: #6c7086; }
+
+        .toolbar .status { font-size: 12px; color: #6c7086; }
         .toolbar .status.saved { color: #a6e3a1; }
         .toolbar .status.saving { color: #f9e2af; }
         .toolbar .status.error { color: #f38ba8; }
 
         .container { display: flex; height: calc(100vh - 40px); }
         .editor-pane { flex: 1; min-width: 0; overflow: hidden; }
-        .preview-pane { flex: 1; min-width: 0; background: white; }
+        .preview-pane { flex: 1; min-width: 0; position: relative; }
         .divider {
             width: 4px; background: #45475a; cursor: col-resize;
-            transition: background 0.2s;
+            transition: background 0.2s; flex-shrink: 0;
         }
-        .divider:hover { background: #89b4fa; }
+        .divider:hover, .divider.dragging { background: #89b4fa; }
 
         .CodeMirror { height: 100% !important; font-size: 14px; }
-        iframe { width: 100%; height: 100%; border: none; }
+
+        /* HTML preview container */
+        #html-preview {
+            width: 100%; height: 100%; overflow-y: auto; background: #fff;
+            padding: 40px; color: #1e293b;
+        }
+
+        /* PDF preview iframe */
+        #pdf-preview {
+            width: 100%; height: 100%; border: none; background: #525252;
+        }
+
+        /* PDF loading spinner overlay */
+        #pdf-loading {
+            display: none; position: absolute; inset: 0;
+            background: #1e1e2e; z-index: 10;
+            flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+        }
+        #pdf-loading.visible { display: flex; }
+        #pdf-loading .spinner {
+            width: 40px; height: 40px; border-radius: 50%;
+            border: 4px solid #45475a; border-top-color: #89b4fa;
+            animation: spin 0.7s linear infinite;
+        }
+        #pdf-loading .label { color: #cdd6f4; font-size: 14px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* PDF stale overlay */
+        #pdf-stale {
+            display: none; position: absolute; inset: 0;
+            background: rgba(0,0,0,0.5); z-index: 10;
+            flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+            cursor: pointer; backdrop-filter: blur(2px);
+        }
+        #pdf-stale.visible { display: flex; }
+        #pdf-stale .badge {
+            background: #f9e2af; color: #1e1e2e; padding: 12px 24px; border-radius: 8px;
+            font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 10px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.4); transition: transform 0.15s;
+        }
+        #pdf-stale:hover .badge { transform: scale(1.05); }
+        #pdf-stale .badge .refresh-icon {
+            width: 18px; height: 18px; display: inline-block;
+        }
+
+        /* ---- Markdown rendered styles ---- */
+        .md-body { max-width: 820px; margin: 0 auto; line-height: 1.7; font-size: 16px; }
+        .md-body h1 { font-size: 2em; font-weight: 700; margin: 1.4em 0 0.6em; padding-bottom: 0.3em; border-bottom: 2px solid #e2e8f0; }
+        .md-body h2 { font-size: 1.5em; font-weight: 600; margin: 1.3em 0 0.5em; padding-bottom: 0.2em; border-bottom: 1px solid #e2e8f0; }
+        .md-body h3 { font-size: 1.25em; font-weight: 600; margin: 1.2em 0 0.4em; }
+        .md-body h4 { font-size: 1em; font-weight: 600; margin: 1em 0 0.3em; }
+        .md-body p { margin: 0 0 1em; }
+        .md-body a { color: #2563eb; text-decoration: none; }
+        .md-body a:hover { text-decoration: underline; }
+        .md-body strong { font-weight: 600; }
+        .md-body em { font-style: italic; }
+        .md-body img { max-width: 100%; border-radius: 6px; }
+
+        /* Lists */
+        .md-body ul, .md-body ol { margin: 0 0 1em; padding-left: 2em; }
+        .md-body ul { list-style-type: disc; }
+        .md-body ol { list-style-type: decimal; }
+        .md-body li { margin: 0.25em 0; }
+        .md-body li > ul, .md-body li > ol { margin: 0.25em 0 0.25em; }
+        .md-body li > p { margin: 0.4em 0; }
+
+        /* Code */
+        .md-body code {
+            background: #f1f5f9; padding: 0.15em 0.4em; border-radius: 4px;
+            font-size: 0.88em; font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+        }
+        .md-body pre {
+            background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;
+            padding: 16px; overflow-x: auto; margin: 0 0 1em;
+        }
+        .md-body pre code {
+            background: none; padding: 0; border-radius: 0; font-size: 0.88em;
+            line-height: 1.6;
+        }
+
+        /* Tables */
+        .md-body table { border-collapse: collapse; width: 100%; margin: 0 0 1em; }
+        .md-body th, .md-body td { border: 1px solid #e2e8f0; padding: 8px 12px; text-align: left; }
+        .md-body th { background: #f8fafc; font-weight: 600; }
+        .md-body tr:nth-child(even) { background: #f8fafc; }
+
+        /* Blockquotes */
+        .md-body blockquote {
+            border-left: 4px solid #cbd5e1; padding: 0.5em 1em; margin: 0 0 1em;
+            color: #475569; background: #f8fafc; border-radius: 0 6px 6px 0;
+        }
+        .md-body blockquote p:last-child { margin-bottom: 0; }
+
+        /* Horizontal rules */
+        .md-body hr { border: none; border-top: 2px solid #e2e8f0; margin: 2em 0; }
+
+        /* Callouts */
+        .md-body .callout {
+            padding: 16px 16px 16px 20px; margin: 1em 0; border-left: 4px solid;
+            border-radius: 0 8px 8px 0; position: relative;
+        }
+        .md-body .callout-title {
+            font-weight: 600; margin-bottom: 4px; display: flex; align-items: center; gap: 8px;
+        }
+        .md-body .callout-title .callout-icon { font-size: 1.1em; }
+        .md-body .callout p:last-child { margin-bottom: 0; }
+        .md-body .callout-info, .md-body .callout-note {
+            background: #eff6ff; border-color: #3b82f6; color: #1e40af;
+        }
+        .md-body .callout-warning, .md-body .callout-caution {
+            background: #fffbeb; border-color: #f59e0b; color: #92400e;
+        }
+        .md-body .callout-tip, .md-body .callout-hint {
+            background: #f0fdf4; border-color: #22c55e; color: #166534;
+        }
+        .md-body .callout-danger, .md-body .callout-error, .md-body .callout-important {
+            background: #fef2f2; border-color: #ef4444; color: #991b1b;
+        }
+
+        /* Mermaid diagrams */
+        .md-body .mermaid { margin: 1em 0; text-align: center; }
+        .md-body .mermaid svg { max-width: 100%; }
+
+        /* Task lists */
+        .md-body .task-list-item { list-style: none; margin-left: -1.5em; }
+        .md-body .task-list-item input[type="checkbox"] { margin-right: 0.5em; }
     </style>
 </head>
 <body>
     <div class="toolbar">
         <span class="filename">{{.Filename}}</span>
-        <span>— pdfify editor</span>
-        <div style="display: flex; gap: 4px;">
-            <button class="btn active" id="btn-pdf" onclick="setPreview('pdf')">PDF</button>
-            <button class="btn" id="btn-html" onclick="setPreview('html')">HTML</button>
+        <span style="color: #6c7086;">— pdfify editor</span>
+        <div class="btn-group">
+            <button class="btn active" id="btn-html" onclick="setPreview('html')">Preview</button>
+            <button class="btn" id="btn-pdf" onclick="setPreview('pdf')">PDF</button>
         </div>
+        <span class="spacer"></span>
         <span class="status" id="status">loading...</span>
     </div>
     <div class="container">
@@ -56,24 +187,199 @@
         </div>
         <div class="divider" id="divider"></div>
         <div class="preview-pane">
-            <iframe id="preview" src="/pdf"></iframe>
+            <div id="html-preview"><div class="md-body" id="md-body"></div></div>
+            <iframe id="pdf-preview" style="display:none"></iframe>
+            <div id="pdf-loading">
+                <div class="spinner"></div>
+                <div class="label">Generating PDF...</div>
+            </div>
+            <div id="pdf-stale" onclick="regeneratePDF()">
+                <div class="badge">
+                    <svg class="refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="23 4 23 10 17 10"></polyline>
+                        <polyline points="1 20 1 14 7 14"></polyline>
+                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                    </svg>
+                    Content changed — click to regenerate
+                </div>
+            </div>
         </div>
     </div>
 
+    <!-- CodeMirror + addons (must load before modes that depend on them) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/mode/overlay.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/mode/simple.min.js"></script>
+    <!-- Core modes -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/xml/xml.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/meta.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/markdown/markdown.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/gfm/gfm.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/yaml/yaml.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/yaml-frontmatter/yaml-frontmatter.min.js"></script>
+    <!-- Language modes for fenced code blocks -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/javascript/javascript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/go/go.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/shell/shell.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/htmlmixed/htmlmixed.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/css/css.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/sql/sql.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/rust/rust.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/dockerfile/dockerfile.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/toml/toml.min.js"></script>
+    <!-- marked.js for proper markdown rendering -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.1/marked.min.js"></script>
+    <!-- highlight.js for code syntax highlighting -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <!-- mermaid for diagrams -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.0/mermaid.min.js"></script>
     <script>
-        const statusEl = document.getElementById('status');
-        const preview = document.getElementById('preview');
-        let previewMode = 'pdf';
-        let saveTimer = null;
-        let cm;
+        // ---- Session token ----
+        const sessionToken = '{{.Token}}';
+        function apiURL(path) { return path + (path.includes('?') ? '&' : '?') + 'token=' + sessionToken; }
 
-        // Initialize CodeMirror
+        // ---- State ----
+        const statusEl = document.getElementById('status');
+        const htmlPreview = document.getElementById('html-preview');
+        const mdBody = document.getElementById('md-body');
+        const pdfPreview = document.getElementById('pdf-preview');
+        const pdfLoading = document.getElementById('pdf-loading');
+        const pdfStaleOverlay = document.getElementById('pdf-stale');
+        let previewMode = 'html';
+        let pdfStale = true;       // content changed since last PDF generation
+        let pdfGenerating = false;
+        let pdfHasLoaded = false;   // has a PDF ever been loaded into the iframe
+        let saveTimer = null;
+        let renderTimer = null;
+        let cm;
+        let lastSavedContent = '';
+
+        // ---- Mermaid init ----
+        mermaid.initialize({
+            startOnLoad: false,
+            theme: 'default',
+            securityLevel: 'loose',
+        });
+
+        // ---- marked.js configuration ----
+        const calloutIcons = {
+            note: 'i', info: 'i',
+            tip: '&#10003;', hint: '&#10003;',
+            warning: '&#9888;', caution: '&#9888;',
+            danger: '&#10005;', error: '&#10005;',
+            important: '!',
+        };
+
+        marked.use({
+            gfm: true,
+            breaks: false,
+            renderer: {
+                blockquote(arg) {
+                    // marked v12 passes different shapes; grab whichever body form exists
+                    const body = (typeof arg === 'string') ? arg
+                               : (arg.body != null) ? arg.body
+                               : (typeof arg === 'object' && arg.tokens) ? false
+                               : String(arg);
+                    if (body === false) return false; // fallback to default
+
+                    const calloutMatch = body.match(/^\s*<p>\s*\[!(\w+)\]\s*(.*)/s);
+                    if (calloutMatch) {
+                        const type = calloutMatch[1].toLowerCase();
+                        const rest = calloutMatch[2];
+                        const lines = rest.split('\n');
+                        let title = lines[0].replace(/<\/p>$/, '').trim();
+                        if (!title) title = type.charAt(0).toUpperCase() + type.slice(1);
+                        let content = '';
+                        if (lines.length > 1) {
+                            content = lines.slice(1).join('\n');
+                            content = content.replace(/^\s*<\/p>/, '').replace(/^\s*<p>/, '<p>');
+                        }
+                        const icon = calloutIcons[type] || 'i';
+                        return `<div class="callout callout-${type}">
+                            <div class="callout-title"><span class="callout-icon">${icon}</span> ${title}</div>
+                            ${content}
+                        </div>\n`;
+                    }
+                    return `<blockquote>${body}</blockquote>\n`;
+                },
+
+                code(arg) {
+                    const text = (typeof arg === 'string') ? arg : arg.text;
+                    const lang = (typeof arg === 'string') ? arguments[1] : arg.lang;
+                    if (lang === 'mermaid') {
+                        return `<div class="mermaid">${text}</div>`;
+                    }
+                    let highlighted;
+                    if (lang && hljs.getLanguage(lang)) {
+                        highlighted = hljs.highlight(text, { language: lang }).value;
+                    } else {
+                        highlighted = hljs.highlightAuto(text).value;
+                    }
+                    return `<pre><code class="hljs language-${lang || ''}">${highlighted}</code></pre>`;
+                },
+            },
+        });
+
+        // ---- Strip YAML frontmatter ----
+        function stripFrontmatter(md) {
+            if (md.startsWith('---\n') || md.startsWith('---\r\n')) {
+                const end = md.indexOf('\n---', 4);
+                if (end > 0) {
+                    const afterEnd = md.indexOf('\n', end + 4);
+                    return afterEnd > 0 ? md.substring(afterEnd + 1) : '';
+                }
+            }
+            return md;
+        }
+
+        // ---- Render markdown to HTML preview ----
+        let mermaidCounter = 0;
+
+        function renderPreview() {
+            const raw = cm.getValue();
+            const md = stripFrontmatter(raw);
+            const scrollTop = htmlPreview.scrollTop;
+            const scrollHeight = htmlPreview.scrollHeight;
+            const scrollRatio = scrollHeight > 0 ? scrollTop / scrollHeight : 0;
+
+            const html = marked.parse(md);
+            mdBody.innerHTML = html;
+
+            requestAnimationFrame(() => {
+                const newScrollHeight = htmlPreview.scrollHeight;
+                if (scrollTop > 0) {
+                    htmlPreview.scrollTop = scrollRatio * newScrollHeight;
+                }
+                renderMermaidDiagrams();
+            });
+        }
+
+        async function renderMermaidDiagrams() {
+            const mermaidDivs = mdBody.querySelectorAll('.mermaid');
+            for (const div of mermaidDivs) {
+                if (div.dataset.processed) continue;
+                const code = div.textContent;
+                div.dataset.processed = 'true';
+                try {
+                    const id = 'mermaid-' + (++mermaidCounter);
+                    const { svg } = await mermaid.render(id, code);
+                    div.innerHTML = svg;
+                } catch (e) {
+                    div.innerHTML = `<pre style="color: #ef4444; font-size: 0.85em;">Mermaid error: ${e.message}</pre>`;
+                }
+            }
+        }
+
+        function scheduleRender() {
+            clearTimeout(renderTimer);
+            renderTimer = setTimeout(renderPreview, 50);
+        }
+
+        // ---- Initialize CodeMirror ----
         cm = CodeMirror.fromTextArea(document.getElementById('editor'), {
-            mode: 'yaml-frontmatter',
+            mode: { name: 'yaml-frontmatter', base: 'gfm' },
             theme: 'dracula',
             lineNumbers: true,
             lineWrapping: true,
@@ -83,40 +389,52 @@
         });
 
         // Load initial content
-        fetch('/api/content')
+        fetch(apiURL('/api/content'))
             .then(r => r.text())
             .then(text => {
                 cm.setValue(text);
+                lastSavedContent = text;
                 statusEl.textContent = 'ready';
                 statusEl.className = 'status saved';
+                renderPreview();
             });
 
-        // Auto-save on change with debounce
+        // On editor change: render preview + schedule save
         cm.on('change', () => {
+            scheduleRender();
             statusEl.textContent = 'modified';
             statusEl.className = 'status saving';
             clearTimeout(saveTimer);
             saveTimer = setTimeout(save, 1500);
         });
 
-        // Ctrl+S to save immediately
         cm.setOption('extraKeys', {
             'Ctrl-S': () => { clearTimeout(saveTimer); save(); },
             'Cmd-S': () => { clearTimeout(saveTimer); save(); },
         });
 
+        // ---- Save ----
         function save() {
+            const content = cm.getValue();
+            if (content === lastSavedContent) {
+                statusEl.textContent = 'no changes';
+                statusEl.className = 'status saved';
+                return;
+            }
+
             statusEl.textContent = 'saving...';
             statusEl.className = 'status saving';
-            fetch('/api/save', {
+            fetch(apiURL('/api/save'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ content: cm.getValue() }),
+                body: JSON.stringify({ content }),
             })
             .then(r => {
                 if (r.ok) {
+                    lastSavedContent = content;
                     statusEl.textContent = 'saved ' + new Date().toLocaleTimeString();
                     statusEl.className = 'status saved';
+                    markPDFStale();
                 } else {
                     statusEl.textContent = 'save failed';
                     statusEl.className = 'status error';
@@ -128,82 +446,140 @@
             });
         }
 
-        // SSE for reload
+        // ---- PDF state management ----
+        function markPDFStale() {
+            if (pdfGenerating) return;
+            pdfStale = true;
+            // Show stale overlay if we're currently viewing the PDF and one has been loaded
+            if (previewMode === 'pdf' && pdfHasLoaded) {
+                pdfStaleOverlay.classList.add('visible');
+            }
+        }
+
+        function triggerPDFGeneration() {
+            if (pdfGenerating) return;
+
+            // Save first if needed
+            const content = cm.getValue();
+            const needsSave = content !== lastSavedContent;
+
+            pdfGenerating = true;
+            pdfStale = false;
+            pdfStaleOverlay.classList.remove('visible');
+            pdfLoading.classList.add('visible');
+
+            const doGenerate = () => {
+                fetch(apiURL('/api/generate-pdf'), { method: 'POST' })
+                    .then(r => {
+                        if (!r.ok) throw new Error('generation failed');
+                    })
+                    .catch(() => {
+                        pdfGenerating = false;
+                        pdfLoading.classList.remove('visible');
+                        pdfStale = true;
+                        pdfStaleOverlay.classList.add('visible');
+                    });
+                // Completion handled by SSE "pdf-ready" event
+            };
+
+            if (needsSave) {
+                fetch(apiURL('/api/save'), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content }),
+                }).then(r => {
+                    if (r.ok) {
+                        lastSavedContent = content;
+                        statusEl.textContent = 'saved ' + new Date().toLocaleTimeString();
+                        statusEl.className = 'status saved';
+                    }
+                    doGenerate();
+                }).catch(() => doGenerate());
+            } else {
+                doGenerate();
+            }
+        }
+
+        function regeneratePDF() {
+            triggerPDFGeneration();
+        }
+
+        // ---- SSE for PDF ready notifications ----
         function connect() {
-            const es = new EventSource('/events');
+            const es = new EventSource(apiURL('/events'));
             es.onmessage = (e) => {
-                if (e.data === 'reload') {
-                    preview.src = '/pdf?t=' + Date.now();
+                if (e.data === 'pdf-ready') {
+                    pdfGenerating = false;
+                    pdfHasLoaded = true;
+                    pdfLoading.classList.remove('visible');
+
+                    // Load the PDF into the iframe
+                    if (previewMode === 'pdf') {
+                        pdfPreview.src = apiURL('/pdf') + '&t=' + Date.now() + '#toolbar=0&navpanes=0';
+                    }
+                } else if (e.data === 'pdf-error') {
+                    pdfGenerating = false;
+                    pdfLoading.classList.remove('visible');
+                    pdfStale = true;
+                    if (previewMode === 'pdf') {
+                        pdfStaleOverlay.classList.add('visible');
+                    }
                 }
             };
             es.onerror = () => { es.close(); setTimeout(connect, 2000); };
         }
         connect();
 
-        // Preview mode toggle
+        // ---- Preview mode toggle ----
         function setPreview(mode) {
             previewMode = mode;
-            document.getElementById('btn-pdf').className = mode === 'pdf' ? 'btn active' : 'btn';
             document.getElementById('btn-html').className = mode === 'html' ? 'btn active' : 'btn';
-            if (mode === 'pdf') {
-                preview.src = '/pdf?t=' + Date.now();
+            document.getElementById('btn-pdf').className = mode === 'pdf' ? 'btn active' : 'btn';
+
+            if (mode === 'html') {
+                htmlPreview.style.display = 'block';
+                pdfPreview.style.display = 'none';
+                pdfLoading.classList.remove('visible');
+                pdfStaleOverlay.classList.remove('visible');
             } else {
-                // For HTML mode, render markdown as styled HTML
-                preview.srcdoc = renderHTML(cm.getValue());
+                // PDF mode
+                htmlPreview.style.display = 'none';
+                pdfPreview.style.display = 'block';
+
+                if (pdfGenerating) {
+                    // Already generating, just show spinner
+                    pdfLoading.classList.add('visible');
+                } else if (pdfStale || !pdfHasLoaded) {
+                    // Need to generate — show spinner and kick off generation
+                    triggerPDFGeneration();
+                } else {
+                    // PDF is current, show it
+                    pdfPreview.src = apiURL('/pdf') + '&t=' + Date.now() + '#toolbar=0&navpanes=0';
+                }
             }
         }
 
-        // Simple markdown-to-HTML renderer (for live preview, not full pdfify rendering)
-        function renderHTML(md) {
-            // Strip frontmatter
-            let body = md;
-            if (body.startsWith('---\n')) {
-                const end = body.indexOf('\n---\n', 4);
-                if (end > 0) body = body.substring(end + 5);
-            }
-
-            // Basic markdown transformations
-            let html = body
-                .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-                .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-                .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-                .replace(/\*(.+?)\*/g, '<em>$1</em>')
-                .replace(/`([^`]+)`/g, '<code>$1</code>')
-                .replace(/^\- (.+)$/gm, '<li>$1</li>')
-                .replace(/^\> \[!(\w+)\] ?(.*)$/gm, '<div class="callout callout-$1"><strong>$2</strong></div>')
-                .replace(/^\> (.+)$/gm, '<blockquote>$1</blockquote>')
-                .replace(/\n\n/g, '</p><p>')
-                ;
-
-            return `<!DOCTYPE html><html><head><style>
-                body { font-family: 'Segoe UI', system-ui, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; color: #1e293b; line-height: 1.6; }
-                h1 { font-size: 2em; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-top: 1.5em; }
-                h2 { font-size: 1.5em; margin-top: 1.3em; }
-                h3 { font-size: 1.2em; margin-top: 1em; }
-                code { background: #f1f5f9; padding: 2px 6px; border-radius: 3px; font-size: 0.9em; }
-                blockquote { border-left: 3px solid #3b82f6; padding: 12px; margin: 12px 0; background: #eff6ff; }
-                .callout { padding: 12px; margin: 12px 0; border-left: 3px solid; border-radius: 0 4px 4px 0; }
-                .callout-info, .callout-note { background: #eff6ff; border-color: #3b82f6; }
-                .callout-warning, .callout-caution { background: #fffbeb; border-color: #f59e0b; }
-                .callout-tip, .callout-hint { background: #f0fdf4; border-color: #22c55e; }
-                .callout-danger, .callout-error { background: #fef2f2; border-color: #ef4444; }
-                li { margin-left: 20px; }
-            </style></head><body><p>${html}</p></body></html>`;
-        }
-
-        // Resizable divider
+        // ---- Resizable divider ----
         const divider = document.getElementById('divider');
         const editorPane = document.getElementById('editor-pane');
         let isDragging = false;
-        divider.addEventListener('mousedown', () => { isDragging = true; });
+
+        divider.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            divider.classList.add('dragging');
+            e.preventDefault();
+        });
         document.addEventListener('mousemove', (e) => {
             if (!isDragging) return;
             const pct = (e.clientX / window.innerWidth) * 100;
+            const clamped = Math.max(20, Math.min(80, pct));
             editorPane.style.flex = 'none';
-            editorPane.style.width = pct + '%';
+            editorPane.style.width = clamped + '%';
         });
-        document.addEventListener('mouseup', () => { isDragging = false; });
+        document.addEventListener('mouseup', () => {
+            isDragging = false;
+            divider.classList.remove('dragging');
+        });
     </script>
 </body>
 </html>

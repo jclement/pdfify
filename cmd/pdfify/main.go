@@ -430,19 +430,25 @@ func runWatchMode(inputPath string, cfg *config.Config, w *ui.Writer) error {
 }
 
 func runEditMode(inputPath string, cfg *config.Config, w *ui.Writer) error {
-	// Initial conversion
-	if err := convertFile(inputPath, cfg, w); err != nil {
-		return err
-	}
-
 	absInput, _ := filepath.Abs(inputPath)
-	outputPath := strings.TrimSuffix(absInput, filepath.Ext(absInput)) + ".pdf"
-	if cfg.Output != "" {
-		outputPath, _ = filepath.Abs(cfg.Output)
+
+	// Use Preview mode so the PDF goes to a cache dir, not next to the source
+	editCfg := *cfg
+	editCfg.Preview = true
+
+	// Compute the preview output path (mirrors converter logic)
+	cacheDir, err := os.UserCacheDir()
+	if err != nil {
+		cacheDir = filepath.Dir(absInput)
 	}
+	previewDir := filepath.Join(cacheDir, "pdfify", "preview")
+	os.MkdirAll(previewDir, 0755)
+	base := strings.TrimSuffix(filepath.Base(absInput), filepath.Ext(absInput))
+	outputPath := filepath.Join(previewDir, base+".pdf")
+	defer os.Remove(outputPath)
 
 	srv := server.New(absInput, outputPath, "edit", func() error {
-		result, err := converter.Convert(inputPath, cfg, nil)
+		result, err := converter.Convert(inputPath, &editCfg, nil)
 		if err != nil {
 			return err
 		}
